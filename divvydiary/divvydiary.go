@@ -7,14 +7,14 @@ type User struct {
 }
 
 type Depot struct {
-	Entries []DepotEntry
+	Entries []*DepotEntry
 }
 
 type DepotEntry struct {
 	Name     string  `json:"name"`
 	ISIN     string  `json:"isin"`
 	WKN      string  `json:"wkn"`
-	Quantity int32   `json:"quantity"`
+	Quantity float32 `json:"quantity"`
 	Price    float32 `json:"price"`
 	Symbol   string  `json:"symbol"`
 }
