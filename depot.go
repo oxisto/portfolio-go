@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -35,7 +36,7 @@ func Sync(key string) *divvydiary.Depot {
 		log.Fatalf("Could not retrieve depot: %v", err)
 		return nil
 	}
-	entries = depot.Entries
+	//entries = depot.Entries
 
 	return depot
 }
@@ -127,9 +128,22 @@ func (a *Quantity) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 }
 
 type Security struct {
-	Name string `xml:"name"`
+	Name         string      `xml:"name"`
+	ISIN         string      `xml:"isin"`
+	TickerSymbol string      `xml:"tickerSymbol"`
+	WKN          string      `xml:"wkn"`
+	LatestPrice  LatestPrice `xml:"latest"`
 
 	Reference string `xml:"reference,attr"`
+}
+
+type LatestPrice struct {
+	Time  string   `xml:"t,attr"`
+	Value Currency `xml:"v,attr"`
+
+	High   Currency `xml:"high"`
+	Low    Currency `xml:"low"`
+	Volume Quantity `xml:"volume"`
 }
 
 func Load() {
@@ -166,13 +180,56 @@ func Load() {
 
 	fmt.Printf("\n=== Depot ===\n")
 
+	var entryMap map[string]*divvydiary.DepotEntry = make(map[string]*divvydiary.DepotEntry)
+
 	for _, transaction := range crossEntry.Portfolio.PortfolioTransactions {
 		fmt.Printf("%s %.02f of %s for %.02f €\n",
 			transaction.Type,
 			transaction.Shares,
 			transaction.Security.Name,
 			transaction.Amount)
+
+		var entry *divvydiary.DepotEntry
+		entry, ok := entryMap[transaction.Security.ISIN]
+		if !ok {
+			entry = &divvydiary.DepotEntry{
+				Name:   transaction.Security.Name,
+				ISIN:   transaction.Security.ISIN,
+				Symbol: transaction.Security.TickerSymbol,
+				WKN:    transaction.Security.WKN,
+				// TODO(cb): It seems that the Currency translation is not working for XML attributes, so we need to do it here
+				Price: float32(transaction.Security.LatestPrice.Value) / 100000000.0,
+			}
+		}
+
+		if transaction.Type == "BUY" {
+			entry.Quantity += float32(transaction.Shares)
+		} else {
+			entry.Quantity -= float32(transaction.Shares)
+		}
+
+		if entry.Quantity <= 0 {
+			// remove it from the map
+			delete(entryMap, transaction.Security.ISIN)
+		} else {
+			entryMap[transaction.Security.ISIN] = entry
+		}
+
 	}
+
+	entries = make([]*divvydiary.DepotEntry, 0)
+
+	for _, entry := range entryMap {
+		if entry != nil {
+			entries = append(entries, entry)
+		} else {
+			fmt.Printf("Somehow this entry is empty")
+		}
+	}
+
+	sort.SliceStable(entries, func(i, j int) bool {
+		return entries[i].Name < entries[j].Name
+	})
 
 	fmt.Printf("done!")
 }
