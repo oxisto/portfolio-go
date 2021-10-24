@@ -3,8 +3,11 @@
 	 * @type {import('@sveltejs/kit').Load}
 	 */
     interface DepotEntry {
-price: any;
-quantity: any;
+		price: any;		
+		buyPrice: any;
+		profit: any;
+		profitPercentage: any;
+		quantity: any;
         isin: string,
         name: string
     }
@@ -35,7 +38,13 @@ quantity: any;
 			<tr>
 				<td><b>{entry.name}</b><br /><code>{entry.isin}</code></td>
 				<td>{entry.quantity}</td>
+				<td>{entry.buyPrice.toFixed(2)} €</td>
                 <td>{entry.price.toFixed(2)} €</td>
+				<td>
+					<span>
+						{entry.profit.toFixed(2)} € ({(entry.profitPercentage*100).toFixed(2)} %)
+					</span>
+				</td>
 			</tr>
 		{/each}
 	</tbody>

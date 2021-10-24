@@ -17,8 +17,20 @@ import (
 	"github.com/oxisto/divplan/divvydiary"
 )
 
-var entries []*divvydiary.DepotEntry
+var entries []*DepotEntry
 var apiKey string
+
+type DepotEntry struct {
+	Name             string  `json:"name"`
+	ISIN             string  `json:"isin"`
+	WKN              string  `json:"wkn"`
+	Quantity         float32 `json:"quantity"`
+	Price            float32 `json:"price"`
+	Symbol           string  `json:"symbol"`
+	BuyPrice         float32 `json:"buyPrice"`
+	Profit           float32 `json:"profit"`
+	ProfitPercentage float32 `json:"profitPercentage"`
+}
 
 func Sync(key string) *divvydiary.Depot {
 	apiKey = key
@@ -131,6 +143,7 @@ type Security struct {
 	Name         string      `xml:"name"`
 	ISIN         string      `xml:"isin"`
 	TickerSymbol string      `xml:"tickerSymbol"`
+	CurrencyCode string      `xml:"currencyCode"`
 	WKN          string      `xml:"wkn"`
 	LatestPrice  LatestPrice `xml:"latest"`
 
@@ -180,7 +193,7 @@ func Load() {
 
 	fmt.Printf("\n=== Depot ===\n")
 
-	var entryMap map[string]*divvydiary.DepotEntry = make(map[string]*divvydiary.DepotEntry)
+	var entryMap map[string]*DepotEntry = make(map[string]*DepotEntry)
 
 	for _, transaction := range crossEntry.Portfolio.PortfolioTransactions {
 		fmt.Printf("%s %.02f of %s for %.02f €\n",
@@ -189,10 +202,10 @@ func Load() {
 			transaction.Security.Name,
 			transaction.Amount)
 
-		var entry *divvydiary.DepotEntry
+		var entry *DepotEntry
 		entry, ok := entryMap[transaction.Security.ISIN]
 		if !ok {
-			entry = &divvydiary.DepotEntry{
+			entry = &DepotEntry{
 				Name:   transaction.Security.Name,
 				ISIN:   transaction.Security.ISIN,
 				Symbol: transaction.Security.TickerSymbol,
@@ -200,10 +213,19 @@ func Load() {
 				// TODO(cb): It seems that the Currency translation is not working for XML attributes, so we need to do it here
 				Price: float32(transaction.Security.LatestPrice.Value) / 100000000.0,
 			}
+
+			if transaction.Security.CurrencyCode == "USD" {
+				// TODO(db): use currency values
+				var conversionRate float32 = 0.86
+
+				entry.Price = conversionRate * float32(entry.Price)
+			}
 		}
 
 		if transaction.Type == "BUY" {
 			entry.Quantity += float32(transaction.Shares)
+			// TODO: calc correctly
+			entry.BuyPrice = float32(transaction.Amount) / float32(transaction.Shares)
 		} else {
 			entry.Quantity -= float32(transaction.Shares)
 		}
@@ -212,12 +234,19 @@ func Load() {
 			// remove it from the map
 			delete(entryMap, transaction.Security.ISIN)
 		} else {
+			if entry.Price != 0 {
+				// TODO: why is the price 0?
+				// update profit values
+				entry.Profit = entry.Quantity * (entry.Price - entry.BuyPrice)
+				entry.ProfitPercentage = entry.Profit / (entry.Quantity * entry.BuyPrice)
+			}
+
 			entryMap[transaction.Security.ISIN] = entry
 		}
 
 	}
 
-	entries = make([]*divvydiary.DepotEntry, 0)
+	entries = make([]*DepotEntry, 0)
 
 	for _, entry := range entryMap {
 		if entry != nil {
