@@ -18,6 +18,8 @@ import (
 )
 
 var entries []*DepotEntry
+var securities []*Security
+var depot Depot
 var apiKey string
 
 type DepotEntry struct {
@@ -80,6 +82,18 @@ type Depot struct {
 	XMLName    xml.Name    `xml:"client"`
 	Accounts   []*Account  `xml:"accounts>account"`
 	Securities []*Security `xml:"securities>security"`
+	Portfolios []*Portfolio
+}
+
+// GetPortfolio retrieves a portfolio account by its UUID
+func (d *Depot) GetPortfolio(uuid string) *Portfolio {
+	for _, portfolio := range d.Portfolios {
+		if portfolio.UUID == uuid {
+			return portfolio
+		}
+	}
+
+	return nil
 }
 
 type Account struct {
@@ -99,7 +113,9 @@ type CrossEntry struct {
 }
 
 type Portfolio struct {
-	PortfolioTransactions []PortfolioTransaction `xml:"transactions>portfolio-transaction"`
+	UUID                  string                 `xml:"uuid" json:"uuid"`
+	Name                  string                 `xml:"name" json:"name"`
+	PortfolioTransactions []PortfolioTransaction `xml:"transactions>portfolio-transaction" json:"-"`
 }
 
 type PortfolioTransactions struct {
@@ -110,7 +126,17 @@ type PortfolioTransaction struct {
 	Type     string    `xml:"type"`
 	Security *Security `xml:"security"`
 	Amount   Currency  `xml:"amount"`
-	Shares   Quantity  `xml:"shares"`
+	Shares   int       `xml:"shares"`
+}
+
+type Money struct {
+	CurrencyCode string `json:"currencyCode"`
+	Amount       int    `json:"amount"`
+}
+
+type Quote struct {
+	CurrencyCode string `json:"currencyCode"`
+	Value        int    `json:"amount"`
 }
 
 type Currency float64
@@ -140,12 +166,12 @@ func (a *Quantity) UnmarshalXML(d *xml.Decoder, start xml.StartElement) error {
 }
 
 type Security struct {
-	Name         string      `xml:"name"`
-	ISIN         string      `xml:"isin"`
+	Name         string      `xml:"name" json:"name"`
+	ISIN         string      `xml:"isin" json:"isin"`
 	TickerSymbol string      `xml:"tickerSymbol"`
 	CurrencyCode string      `xml:"currencyCode"`
 	WKN          string      `xml:"wkn"`
-	LatestPrice  LatestPrice `xml:"latest"`
+	LatestPrice  LatestPrice `xml:"latest" json:"latest"`
 
 	Reference string `xml:"reference,attr"`
 }
@@ -171,7 +197,6 @@ func Load() {
 
 	byteValue, _ := ioutil.ReadAll(file)
 
-	var depot Depot
 	xml.Unmarshal(byteValue, &depot)
 
 	security := depot.Securities[0].Name
@@ -188,6 +213,19 @@ func Load() {
 
 			var security = depot.Securities[id-1]
 			*transaction.Security = *security
+		}
+	}
+
+	depot.Portfolios = make([]*Portfolio, 0)
+
+	for _, account := range depot.Accounts {
+		// loop through transactions to find portfolios
+		for _, transaction := range account.AccountTransactions {
+			if transaction.CrossEntry != nil {
+				var portfolio = &transaction.CrossEntry.Portfolio
+
+				depot.Portfolios = append(depot.Portfolios, portfolio)
+			}
 		}
 	}
 
@@ -259,6 +297,8 @@ func Load() {
 	sort.SliceStable(entries, func(i, j int) bool {
 		return entries[i].Name < entries[j].Name
 	})
+
+	securities = depot.Securities
 
 	fmt.Printf("done!")
 }
